@@ -712,6 +712,7 @@ const getAllServicesHandler = async (req, res) => {
       totalPages: Math.ceil(total / pageSize),
       currentPage: pageNum,
       services,
+      data: services,
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: 'Failed to retrieve wedding services.' });
@@ -802,7 +803,7 @@ const getServiceByIdHandler = async (req, res) => {
       return res.status(404).json({ success: false, error: 'This service is currently unavailable or pending review.' });
     }
 
-    return res.status(200).json({ success: true, service });
+    return res.status(200).json({ success: true, service, data: service });
   } catch (err) {
     return res.status(500).json({ success: false, error: 'Failed to retrieve service details.' });
   }
@@ -1057,6 +1058,7 @@ const getCustomerBookingsHandler = async (req, res) => {
       totalPages: Math.ceil(total / pageSize),
       currentPage: pageNum,
       bookings,
+      data: bookings,
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: 'Failed to retrieve your booking requests.' });
