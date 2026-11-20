@@ -47,6 +47,6 @@ const transactionSchema = new mongoose.Schema(
 
 transactionSchema.index({ vendorId: 1, createdAt: -1 });
 
-const Transaction = mongoose.model('Transaction', transactionSchema);
+const Transaction = mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema);
 
 module.exports = Transaction;

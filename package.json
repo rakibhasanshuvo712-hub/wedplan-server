@@ -2,10 +2,10 @@
   "name": "wedplan-server",
   "version": "1.0.0",
   "description": "Wedding planning API server",
-  "main": "src/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "start": "node index.js",
+    "dev": "nodemon index.js",
     "seed": "node seed.js",
     "test": "jest tests/api.test.js --runInBand --forceExit"
   },

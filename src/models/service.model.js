@@ -85,6 +85,6 @@ serviceSchema.index({
 // Compound index for browse and filters
 serviceSchema.index({ status: 1, isActive: 1, category: 1, price: 1 });
 
-const Service = mongoose.model('Service', serviceSchema);
+const Service = mongoose.models.Service || mongoose.model('Service', serviceSchema);
 
 module.exports = { Service, serviceCategories };

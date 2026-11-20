@@ -53,6 +53,6 @@ bookingSchema.index({ serviceId: 1, eventDate: 1, status: 1 });
 bookingSchema.index({ customerId: 1, createdAt: -1 });
 bookingSchema.index({ vendorId: 1, createdAt: -1 });
 
-const Booking = mongoose.model('Booking', bookingSchema);
+const Booking = mongoose.models.Booking || mongoose.model('Booking', bookingSchema);
 
 module.exports = Booking;
