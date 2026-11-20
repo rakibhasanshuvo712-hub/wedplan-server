@@ -1632,6 +1632,17 @@ const uploadHandler = async (req, res) => {
 
 apiRouter.post('/upload', authenticate, upload.single('image'), uploadHandler);
 
+// Ensure DB connection for serverless environments (Vercel)
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('Database connection error in request:', err);
+    next();
+  }
+});
+
 // Mount router on BOTH '/api' AND root '/' for seamless client compatibility!
 app.use('/api', apiRouter);
 app.use('/', apiRouter);
@@ -1675,10 +1686,29 @@ const startServer = async () => {
     await connectDB();
     await seedDatabase();
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`WedPlan API Server running in ${config.env} mode on port ${PORT}`);
       console.log(`Ready to accept connections from: ${config.clientUrl}`);
     });
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`Error: Port ${PORT} is already in use by another process.`);
+      } else {
+        console.error('Server listen error:', err);
+      }
+      process.exit(1);
+    });
+
+    const gracefulShutdown = async () => {
+      server.close(async () => {
+        await disconnectDB();
+        process.exit(0);
+      });
+    };
+
+    process.on('SIGINT', gracefulShutdown);
+    process.on('SIGTERM', gracefulShutdown);
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
@@ -1689,16 +1719,18 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = {
-  app,
-  startServer,
-  connectDB,
-  disconnectDB,
-  seedDatabase,
-  User,
-  Service,
-  Booking,
-  Transaction,
-  generateToken,
-  verifyToken,
-};
+// Attach helpers to app for backward compatibility with testing suites
+app.app = app;
+app.startServer = startServer;
+app.connectDB = connectDB;
+app.disconnectDB = disconnectDB;
+app.seedDatabase = seedDatabase;
+app.User = User;
+app.Service = Service;
+app.Booking = Booking;
+app.Transaction = Transaction;
+app.generateToken = generateToken;
+app.verifyToken = verifyToken;
+
+// Default export MUST be the Express app function for Vercel Serverless
+module.exports = app;
