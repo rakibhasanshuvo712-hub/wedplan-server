@@ -86,7 +86,10 @@ const disconnectDB = async () => {
 // ==========================================
 // 3. MONGOOSE DATA MODELS
 // ==========================================
-const { User, Service, serviceCategories, Booking, Transaction } = require('./src/models');
+const modelsPath = fs.existsSync(path.join(__dirname, 'src/models'))
+  ? './src/models'
+  : './models';
+const { User, Service, serviceCategories, Booking, Transaction } = require(modelsPath);
 
 // ==========================================
 // 4. JWT & AUTHENTICATION MIDDLEWARES
