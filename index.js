@@ -45,40 +45,54 @@ const config = {
 const stripe = Stripe(config.stripe.secretKey || 'sk_test_placeholder');
 
 // ==========================================
-// 2. MONGODB DATABASE CONNECTION
+// 2. MONGODB DATABASE CONNECTION (SERVERLESS CACHED)
 // ==========================================
-let isConnected = false;
+let cachedConn = null;
+let cachedPromise = null;
 
 const connectDB = async () => {
-  if (isConnected || mongoose.connection.readyState === 1) {
-    isConnected = true;
-    return mongoose.connection;
+  if (cachedConn && mongoose.connection.readyState === 1) {
+    return cachedConn;
   }
 
-  const uri = config.dbUri;
-  if (!uri) {
-    console.warn('MongoDB URI is not defined in environment variables.');
-    return null;
+  if (!cachedPromise) {
+    const uri = config.dbUri;
+    if (!uri) {
+      console.warn('MongoDB URI is not defined in environment variables.');
+      return null;
+    }
+
+    cachedPromise = mongoose
+      .connect(uri, {
+        bufferCommands: false,
+        serverSelectionTimeoutMS: 10000,
+      })
+      .then((m) => {
+        cachedConn = m.connection;
+        console.log(`MongoDB Connected: ${cachedConn.host}`);
+        return cachedConn;
+      })
+      .catch((err) => {
+        cachedPromise = null;
+        throw err;
+      });
   }
 
   try {
-    const conn = await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 10000,
-    });
-    isConnected = true;
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-    return conn.connection;
+    cachedConn = await cachedPromise;
+    return cachedConn;
   } catch (error) {
+    cachedPromise = null;
     console.error(`MongoDB Connection Error: ${error.message}`);
-    if (config.env === 'production') process.exit(1);
     return null;
   }
 };
 
 const disconnectDB = async () => {
-  if (isConnected || mongoose.connection.readyState !== 0) {
+  if (cachedConn || mongoose.connection.readyState !== 0) {
     await mongoose.disconnect();
-    isConnected = false;
+    cachedConn = null;
+    cachedPromise = null;
     console.log('MongoDB Disconnected');
   }
 };
@@ -361,18 +375,21 @@ const app = express();
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || config.corsOrigin === '*' || (Array.isArray(config.corsOrigin) && config.corsOrigin.includes(origin))) {
-        callback(null, true);
-      } else {
-        callback(null, true);
-      }
-    },
-    credentials: true,
-  })
-);
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || config.corsOrigin === '*' || (Array.isArray(config.corsOrigin) && config.corsOrigin.includes(origin))) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-access-token', 'stripe-signature'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(
   express.json({
@@ -386,6 +403,40 @@ app.use(express.urlencoded({ extended: true }));
 if (config.env !== 'test') {
   app.use(morgan('dev'));
 }
+
+// Serverless Database Connection & Seed Middleware
+let isSeeded = false;
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    if (!isSeeded) {
+      isSeeded = true;
+      seedDatabase().catch((e) => console.error('Seeder background error:', e.message));
+    }
+    next();
+  } catch (err) {
+    console.error('Serverless connection error:', err);
+    next();
+  }
+});
+
+// Root API Endpoint
+app.get('/', (req, res) => {
+  res.json({
+    name: 'WedPlan — Wedding Planning Platform API',
+    status: 'online',
+    version: '1.0.0',
+    documentation: '/api/health',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth',
+      services: '/api/services',
+      bookings: '/api/bookings',
+      payments: '/api/payments',
+      admin: '/api/admin',
+    },
+  });
+});
 
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -1715,7 +1766,7 @@ const startServer = async () => {
   }
 };
 
-if (require.main === module) {
+if (!process.env.VERCEL && require.main === module) {
   startServer();
 }
 

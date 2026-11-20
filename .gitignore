@@ -45,3 +45,4 @@ uploads/*
 # Debug
 npm-debug.log*
 .env
+.vercel
