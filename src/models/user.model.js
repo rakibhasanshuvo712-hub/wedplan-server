@@ -41,6 +41,21 @@ const userSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    phone: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    bio: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    address: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     subscriptionPlan: {
       type: String,
       enum: ['free', 'premium'],
