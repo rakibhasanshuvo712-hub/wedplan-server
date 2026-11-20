@@ -1,17 +1,9 @@
 const { User } = require('../models');
 const { generateToken } = require('../utils/jwt');
 
-// Helper for password validation: min 6 chars, 1 uppercase, 1 lowercase
-const validatePassword = (password) => {
-  if (!password || typeof password !== 'string') return false;
-  if (password.length < 6) return false;
-  if (!/[A-Z]/.test(password)) return false;
-  if (!/[a-z]/.test(password)) return false;
-  return true;
-};
-
 /**
- * Register a new User (Customer or Vendor)
+ * Register a new customer or vendor
+ * POST /api/auth/register
  */
 const register = async (req, res) => {
   try {
@@ -20,29 +12,41 @@ const register = async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        error: 'Full name, email, and password are required.',
+        error: 'Name, email, and password are required.',
       });
     }
 
-    // Role verification: only 'customer' or 'vendor' allowed through registration
-    const selectedRole = role ? role.toLowerCase() : 'customer';
-    if (!['customer', 'vendor'].includes(selectedRole)) {
+    // Role validation: public registration only permits 'customer' or 'vendor'
+    const allowedRoles = ['customer', 'vendor'];
+    const assignedRole = allowedRoles.includes(role) ? role : 'customer';
+
+    if (role === 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Admin accounts cannot be created through public registration.',
+      });
+    }
+
+    // Password strength rules: min 6 chars, 1 uppercase, 1 lowercase
+    if (password.length < 6) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid account role. Must be either "customer" or "vendor". Admin accounts cannot be created publicly.',
+        error: 'Password must be at least 6 characters long.',
       });
     }
 
-    // Password validation rule
-    if (!validatePassword(password)) {
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasLowercase = /[a-z]/.test(password);
+
+    if (!hasUppercase || !hasLowercase) {
       return res.status(400).json({
         success: false,
-        error: 'Password must be at least 6 characters long and contain at least one uppercase letter and one lowercase letter.',
+        error: 'Password must contain at least one uppercase and one lowercase letter.',
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
     if (existingUser) {
       return res.status(409).json({
         success: false,
@@ -50,36 +54,42 @@ const register = async (req, res) => {
       });
     }
 
-    const newUser = await User.create({
+    // Create user
+    const newUser = new User({
       name: name.trim(),
-      email: normalizedEmail,
+      email: email.toLowerCase().trim(),
       password,
       image: image || '',
-      role: selectedRole,
-      businessName: selectedRole === 'vendor' ? (businessName || '').trim() : '',
+      role: assignedRole,
+      businessName: assignedRole === 'vendor' ? (businessName || name).trim() : '',
       subscriptionPlan: 'free',
       isBlocked: false,
     });
+
+    await newUser.save();
 
     const token = generateToken(newUser);
 
     return res.status(201).json({
       success: true,
-      message: 'Account registered successfully.',
-      token,
-      user: newUser.toSafeObject(),
+      message: 'Registration successful! Welcome to WedPlan.',
+      data: {
+        user: newUser.toSafeObject(),
+        token,
+      },
     });
   } catch (error) {
     console.error('Registration Error:', error);
     return res.status(500).json({
       success: false,
-      error: 'Registration failed. Please try again.',
+      error: 'An error occurred during registration. Please try again.',
     });
   }
 };
 
 /**
- * Sign In with Email & Password
+ * Log in with email and password
+ * POST /api/auth/login
  */
 const login = async (req, res) => {
   try {
@@ -92,13 +102,21 @@ const login = async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail }).select('+password');
+    // Explicitly select password field to verify
+    const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password');
 
     if (!user) {
       return res.status(401).json({
         success: false,
-        error: 'Invalid email or password.',
+        error: 'Invalid email or password credentials.',
+      });
+    }
+
+    // Blocked check
+    if (user.isBlocked) {
+      return res.status(403).json({
+        success: false,
+        error: 'Your account has been blocked by administrators. Access is prohibited.',
       });
     }
 
@@ -106,14 +124,7 @@ const login = async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        error: 'Invalid email or password.',
-      });
-    }
-
-    if (user.isBlocked) {
-      return res.status(403).json({
-        success: false,
-        error: 'Your account has been blocked. Please contact support.',
+        error: 'Invalid email or password credentials.',
       });
     }
 
@@ -121,64 +132,67 @@ const login = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Signed in successfully.',
-      token,
-      user: user.toSafeObject(),
+      message: 'Logged in successfully.',
+      data: {
+        user: user.toSafeObject(),
+        token,
+      },
     });
   } catch (error) {
     console.error('Login Error:', error);
     return res.status(500).json({
       success: false,
-      error: 'Login failed. Please try again.',
+      error: 'An error occurred during login. Please try again.',
     });
   }
 };
 
 /**
- * Google Authentication / OAuth sync
+ * Social / Google authentication
+ * POST /api/auth/google
  */
 const googleAuth = async (req, res) => {
   try {
-    const { email, name, image, googleId, role } = req.body;
+    const { email, name, image, role, googleId } = req.body;
 
     if (!email) {
       return res.status(400).json({
         success: false,
-        error: 'Email is required for Google authentication.',
+        error: 'Google email is required.',
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    let user = await User.findOne({ email: normalizedEmail });
+    let user = await User.findOne({ email: email.toLowerCase().trim() });
 
     if (user) {
       if (user.isBlocked) {
         return res.status(403).json({
           success: false,
-          error: 'Your account has been blocked. Please contact support.',
+          error: 'Your account has been blocked. Access is restricted.',
         });
       }
 
-      // Update googleId or image if not present
-      if (googleId && !user.googleId) user.googleId = googleId;
-      if (image && !user.image) user.image = image;
-      await user.save();
-    } else {
-      // Determine role for new user (default to customer if not specified or admin)
-      let selectedRole = role ? role.toLowerCase() : 'customer';
-      if (!['customer', 'vendor'].includes(selectedRole)) {
-        selectedRole = 'customer';
+      if (!user.googleId && googleId) {
+        user.googleId = googleId;
+        if (!user.image && image) user.image = image;
+        await user.save();
       }
+    } else {
+      const allowedRoles = ['customer', 'vendor'];
+      const assignedRole = allowedRoles.includes(role) ? role : 'customer';
 
-      user = await User.create({
-        name: name || 'Google User',
-        email: normalizedEmail,
+      user = new User({
+        name: name || email.split('@')[0],
+        email: email.toLowerCase().trim(),
         image: image || '',
-        role: selectedRole,
-        googleId: googleId || '',
-        isBlocked: false,
+        role: assignedRole,
+        businessName: assignedRole === 'vendor' ? name : '',
+        googleId,
         subscriptionPlan: 'free',
+        isBlocked: false,
       });
+
+      await user.save();
     }
 
     const token = generateToken(user);
@@ -186,38 +200,36 @@ const googleAuth = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Google authentication successful.',
-      token,
-      user: user.toSafeObject(),
+      data: {
+        user: user.toSafeObject(),
+        token,
+      },
     });
   } catch (error) {
     console.error('Google Auth Error:', error);
     return res.status(500).json({
       success: false,
-      error: 'Google authentication failed.',
+      error: 'An error occurred with Google authentication.',
     });
   }
 };
 
 /**
- * Get current authenticated user profile
+ * Get current user profile
+ * GET /api/auth/me
  */
 const getMe = async (req, res) => {
-  try {
-    return res.status(200).json({
-      success: true,
+  return res.status(200).json({
+    success: true,
+    data: {
       user: req.user.toSafeObject(),
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to retrieve user profile.',
-    });
-  }
+    },
+  });
 };
 
 /**
- * Update Profile Information (Customers & Vendors)
- * Strict rules: Users must not be able to change role or subscription status.
+ * Update user profile
+ * PUT /api/auth/profile
  */
 const updateProfile = async (req, res) => {
   try {
@@ -225,8 +237,8 @@ const updateProfile = async (req, res) => {
     const user = req.user;
 
     if (name) user.name = name.trim();
-    if (typeof image === 'string') user.image = image.trim();
-    if (user.role === 'vendor' && typeof businessName === 'string') {
+    if (image !== undefined) user.image = image;
+    if (user.role === 'vendor' && businessName) {
       user.businessName = businessName.trim();
     }
 
@@ -235,7 +247,9 @@ const updateProfile = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Profile updated successfully.',
-      user: user.toSafeObject(),
+      data: {
+        user: user.toSafeObject(),
+      },
     });
   } catch (error) {
     console.error('Update Profile Error:', error);
@@ -246,64 +260,10 @@ const updateProfile = async (req, res) => {
   }
 };
 
-/**
- * Change Password
- */
-const changePassword = async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        error: 'Current password and new password are required.',
-      });
-    }
-
-    if (!validatePassword(newPassword)) {
-      return res.status(400).json({
-        success: false,
-        error: 'New password must be at least 6 characters long and contain at least one uppercase letter and one lowercase letter.',
-      });
-    }
-
-    const user = await User.findById(req.user._id).select('+password');
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found.' });
-    }
-
-    // If user has existing password, verify it
-    if (user.password) {
-      const isMatch = await user.comparePassword(currentPassword);
-      if (!isMatch) {
-        return res.status(400).json({
-          success: false,
-          error: 'Current password does not match.',
-        });
-      }
-    }
-
-    user.password = newPassword;
-    await user.save();
-
-    return res.status(200).json({
-      success: true,
-      message: 'Password changed successfully.',
-    });
-  } catch (error) {
-    console.error('Change Password Error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to change password.',
-    });
-  }
-};
-
 module.exports = {
   register,
   login,
   googleAuth,
   getMe,
   updateProfile,
-  changePassword,
 };
