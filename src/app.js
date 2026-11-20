@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -10,7 +11,7 @@ const config = require('./config');
 const app = express();
 
 // ===== Global Middleware =====
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -38,6 +39,9 @@ app.use(express.urlencoded({ extended: true }));
 if (config.env !== 'test') {
   app.use(morgan('dev'));
 }
+
+// Serve uploaded files statically
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // ===== Routes =====
 app.use('/api', routes);
