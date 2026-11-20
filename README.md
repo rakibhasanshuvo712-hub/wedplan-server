@@ -6,10 +6,9 @@ A robust, enterprise-grade REST API backend built with Express.js, MongoDB, Mong
 
 ## 🔗 Project Links
 
-- **Server Repository**: [https://github.com/your-username/wedplan-server](https://github.com/your-username/wedplan-server)
-- **Client Repository**: [https://github.com/your-username/wedplan-client](https://github.com/your-username/wedplan-client)
-- **Live Backend API**: `https://api.wedplan.yourdomain.com` (or Railway/Render deployment URL)
-- **Live Client Application**: `https://wedplan.yourdomain.com`
+- **Server Repository**: [https://github.com/rakibhasanshuvo712-hub/wedplan-server](https://github.com/rakibhasanshuvo712-hub/wedplan-server)
+- **Live Backend API (Vercel)**: [https://wedplan-backend-inky.vercel.app](https://wedplan-backend-inky.vercel.app)
+- **Live Client Application**: `https://wedplan.vercel.app` (or client deployment link)
 
 ---
 
