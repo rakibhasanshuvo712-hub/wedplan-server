@@ -26,6 +26,7 @@ router.get('/categories', getCategories);
 
 // Vendor-specific routes (must be mounted before /:id)
 router.get('/my-services', authenticate, requireVendor, getMyServices);
+router.get('/vendor/my-services', authenticate, requireVendor, getMyServices);
 
 // Single service route (public with optional auth for draft visibility)
 router.get('/:id', optionalAuth, getServiceById);

@@ -19,10 +19,14 @@ const router = Router();
 router.post('/', authenticate, requireCustomer, createBooking);
 router.get('/my-bookings', authenticate, requireCustomer, getCustomerBookings);
 router.patch('/:id/cancel', authenticate, requireCustomer, cancelBooking);
+router.put('/:id/cancel', authenticate, requireCustomer, cancelBooking);
 
 // Vendor routes
 router.get('/vendor-requests', authenticate, requireVendor, getVendorBookings);
 router.patch('/:id/status', authenticate, requireVendor, updateBookingStatus);
+router.put('/:id/status', authenticate, requireVendor, updateBookingStatus);
+router.patch('/:id/respond', authenticate, requireVendor, updateBookingStatus);
+router.put('/:id/respond', authenticate, requireVendor, updateBookingStatus);
 
 // Common detail route
 router.get('/:id', authenticate, getBookingById);

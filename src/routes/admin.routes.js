@@ -20,9 +20,11 @@ router.get('/overview', getAdminOverview);
 router.get('/users', getAllUsers);
 router.get('/users/:id', getUserById);
 router.patch('/users/:id/block', toggleBlockUser);
+router.put('/users/:id/block', toggleBlockUser);
 
 router.get('/services', getAllServicesAdmin);
 router.patch('/services/:id/status', updateServiceStatus);
+router.put('/services/:id/status', updateServiceStatus);
 router.delete('/services/:id', deleteServiceAdmin);
 
 router.get('/transactions', getAllTransactions);

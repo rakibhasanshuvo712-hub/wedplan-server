@@ -73,6 +73,8 @@ const register = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: 'Registration successful! Welcome to WedPlan.',
+      token,
+      user: newUser.toSafeObject(),
       data: {
         user: newUser.toSafeObject(),
         token,
@@ -133,6 +135,8 @@ const login = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Logged in successfully.',
+      token,
+      user: user.toSafeObject(),
       data: {
         user: user.toSafeObject(),
         token,
@@ -200,6 +204,8 @@ const googleAuth = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Google authentication successful.',
+      token,
+      user: user.toSafeObject(),
       data: {
         user: user.toSafeObject(),
         token,
@@ -221,6 +227,7 @@ const googleAuth = async (req, res) => {
 const getMe = async (req, res) => {
   return res.status(200).json({
     success: true,
+    user: req.user.toSafeObject(),
     data: {
       user: req.user.toSafeObject(),
     },
@@ -247,6 +254,7 @@ const updateProfile = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Profile updated successfully.',
+      user: user.toSafeObject(),
       data: {
         user: user.toSafeObject(),
       },
