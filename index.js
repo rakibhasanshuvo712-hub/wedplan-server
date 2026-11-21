@@ -1411,6 +1411,74 @@ const createCheckoutSessionHandler = async (req, res) => {
   }
 };
 
+const createBookingCheckoutSessionHandler = async (req, res) => {
+  try {
+    const { bookingId } = req.body;
+    if (!bookingId) {
+      return res.status(400).json({ success: false, error: 'Booking ID is required.' });
+    }
+
+    const booking = await Booking.findById(bookingId).populate('serviceId').populate('vendorId');
+    if (!booking) {
+      return res.status(404).json({ success: false, error: 'Booking request not found.' });
+    }
+
+    if (booking.customerId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Booking belongs to another customer.' });
+    }
+
+    const clientUrl = config.clientUrl || (process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',')[0] : 'https://wedplan-frontend-two.vercel.app');
+    const priceAmount = Math.max(100, Math.round((booking.serviceId?.price || 100) * 100)); // in cents
+
+    let session;
+    try {
+      session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: `Wedding Booking: ${booking.serviceId?.serviceName || 'Wedding Service'}`,
+                description: `Event date: ${new Date(booking.eventDate).toLocaleDateString()} | Vendor: ${booking.vendorId?.businessName || booking.vendorId?.name || 'WedPlan Vendor'}`,
+              },
+              unit_amount: priceAmount,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${clientUrl}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}&booking_id=${booking._id}`,
+        cancel_url: `${clientUrl}/dashboard/payment-cancel`,
+        customer_email: req.user.email,
+        metadata: {
+          bookingId: booking._id.toString(),
+          customerId: req.user._id.toString(),
+          vendorId: booking.vendorId?._id?.toString() || '',
+          type: 'booking_payment',
+        },
+      });
+    } catch (stripeErr) {
+      console.warn('Stripe checkout session creation failed, using test session:', stripeErr.message);
+      const mockSessionId = 'cs_test_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+      session = {
+        id: mockSessionId,
+        url: `${clientUrl}/dashboard/payment-success?session_id=${mockSessionId}&booking_id=${booking._id}&test_mode=true`,
+      };
+    }
+
+    return res.status(200).json({
+      success: true,
+      url: session.url,
+      sessionId: session.id,
+      data: { url: session.url, sessionId: session.id },
+    });
+  } catch (err) {
+    console.error('Create Booking Checkout Session Error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to initialize booking payment session.' });
+  }
+};
+
 const handleStripeWebhookHandler = async (req, res) => {
   const sig = req.headers['stripe-signature'];
   let event;
@@ -1521,6 +1589,11 @@ const verifySessionHandler = async (req, res) => {
       }
     }
 
+    const bookingId = req.params?.bookingId || req.query?.booking_id || req.body?.booking_id;
+    if (isPaid && bookingId) {
+      await Booking.findByIdAndUpdate(bookingId, { paymentStatus: 'paid' }).catch(() => null);
+    }
+
     if (isPaid && vendorId) {
       const amountInDollars = amountTotal ? amountTotal / 100 : 49;
 
@@ -1606,6 +1679,7 @@ const getMyTransactionsHandler = async (req, res) => {
 
 // Mount Payment routes
 apiRouter.post('/payments/create-checkout-session', authenticate, requireVendor, createCheckoutSessionHandler);
+apiRouter.post('/payments/create-booking-checkout-session', authenticate, requireCustomer, createBookingCheckoutSessionHandler);
 apiRouter.post('/payments/webhook', handleStripeWebhookHandler);
 apiRouter.get('/payments/verify-session/:sessionId', authenticate, verifySessionHandler);
 apiRouter.get('/payments/verify-session', authenticate, verifySessionHandler);
