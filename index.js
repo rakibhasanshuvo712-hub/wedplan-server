@@ -918,7 +918,7 @@ const createServiceHandler = async (req, res) => {
       const activeCount = await Service.countDocuments({
         vendorId: req.user._id,
         status: { $ne: 'rejected' },
-        isActive: true,
+        isActive: { $ne: false },
       });
 
       if (activeCount >= 3) {
@@ -926,6 +926,7 @@ const createServiceHandler = async (req, res) => {
           success: false,
           error: 'Free plan limit reached (maximum 3 active services). Please upgrade to Premium to publish unlimited services.',
           upgradeRequired: true,
+          requiresUpgrade: true,
         });
       }
     }
@@ -968,6 +969,26 @@ const updateServiceHandler = async (req, res) => {
     }
 
     const { serviceName, category, description, price, location, images, isActive } = req.body;
+    if (typeof isActive === 'boolean' && isActive && !service.isActive && isOwner) {
+      const isPremium = req.user.subscriptionPlan === 'premium';
+      if (!isPremium) {
+        const activeCount = await Service.countDocuments({
+          vendorId: req.user._id,
+          status: { $ne: 'rejected' },
+          isActive: { $ne: false },
+        });
+
+        if (activeCount >= 3) {
+          return res.status(403).json({
+            success: false,
+            error: 'Free plan limit reached (maximum 3 active services). Please upgrade to Premium to activate more services.',
+            upgradeRequired: true,
+            requiresUpgrade: true,
+          });
+        }
+      }
+    }
+
     if (serviceName) service.serviceName = serviceName.trim();
     if (category) service.category = category.trim();
     if (description) service.description = description.trim();
