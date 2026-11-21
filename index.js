@@ -698,48 +698,10 @@ const updateProfileHandler = async (req, res) => {
 };
 
 const becomeVendorHandler = async (req, res) => {
-  try {
-    const user = req.user;
-    if (user.role === 'admin') {
-      return res.status(400).json({ success: false, error: 'Admin accounts cannot switch to vendor role.' });
-    }
-    const { businessName, bio, phone, address } = req.body;
-    user.role = 'vendor';
-    user.businessName = businessName?.trim() || `${user.name}'s Wedding Studio`;
-    if (bio) user.bio = bio.trim();
-    if (phone) user.phone = phone.trim();
-    if (address) user.address = address.trim();
-    await user.save();
-
-    await Vendor.findOneAndUpdate(
-      { userId: user._id },
-      {
-        userId: user._id,
-        name: user.name,
-        businessName: user.businessName,
-        email: user.email,
-        phone: user.phone || '',
-        address: user.address || '',
-        bio: user.bio || '',
-        image: user.image || '',
-        subscriptionPlan: user.subscriptionPlan || 'free',
-        subscriptionExpiresAt: user.subscriptionExpiresAt || null,
-      },
-      { upsert: true, new: true }
-    ).catch(() => null);
-
-    const token = generateToken(user);
-
-    return res.status(200).json({
-      success: true,
-      message: 'Congratulations! You are now a registered Wedding Vendor on WedPlan.',
-      token,
-      user: user.toSafeObject(),
-      data: { token, user: user.toSafeObject() },
-    });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: 'Failed to upgrade to vendor.' });
-  }
+  return res.status(403).json({
+    success: false,
+    error: 'Role modification is disabled. Roles are permanently assigned at registration and cannot be modified.',
+  });
 };
 
 const changePasswordHandler = async (req, res) => {
