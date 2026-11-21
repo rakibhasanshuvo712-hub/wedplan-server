@@ -1,12 +1,12 @@
-const { betterAuth } = require('better-auth');
-const { mongodbAdapter } = require('better-auth/adapters/mongodb');
-const { toNodeHandler } = require('better-auth/node');
 const mongoose = require('mongoose');
 
 let authInstance = null;
 
-const getAuth = () => {
+const getAuth = async () => {
   if (authInstance) return authInstance;
+
+  const { betterAuth } = await import('better-auth');
+  const { mongodbAdapter } = await import('better-auth/adapters/mongodb');
 
   const db = mongoose.connection.db;
   if (!db) {
@@ -45,7 +45,8 @@ const getAuth = () => {
 
 const betterAuthMiddleware = async (req, res, next) => {
   try {
-    const auth = getAuth();
+    const auth = await getAuth();
+    const { toNodeHandler } = await import('better-auth/node');
     return toNodeHandler(auth)(req, res);
   } catch (err) {
     console.error('Better Auth Middleware Error:', err);
