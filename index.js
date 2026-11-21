@@ -595,9 +595,23 @@ const googleAuthHandler = async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+
+    if (normalizedEmail === (config.admin.email || 'admin@wedplan.com').toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Admin accounts must log in with email and password only. Google Sign-In is restricted for administrators.',
+      });
+    }
+
     let user = await User.findOne({ email: normalizedEmail });
 
     if (user) {
+      if (user.role === 'admin') {
+        return res.status(403).json({
+          success: false,
+          error: 'Admin accounts must log in with email and password only. Google Sign-In is restricted for administrators.',
+        });
+      }
       if (user.isBlocked) {
         return res.status(403).json({ success: false, error: 'Your account has been blocked.' });
       }
