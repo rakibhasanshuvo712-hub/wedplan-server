@@ -20,6 +20,7 @@ A robust, enterprise-grade REST API backend built with Express.js, MongoDB, Mong
 - **Blocked Account Enforcement**: Blocked users are strictly denied access to all protected APIs.
 - **Resource Ownership Verification**: Vendors can only manage their own services and booking responses; customers can only cancel their own pending booking requests.
 - **Admin Security**: Admin accounts cannot be created via public registration; seeded securely via environment variables.
+- **Real Google Sign-In**: `POST /api/auth/google` accepts a Google Identity Services token and verifies it directly with Google (`userinfo` for access tokens, `tokeninfo` for ID tokens) before creating or signing in an account. Client-supplied emails are never trusted. Admin emails are always rejected for Google login.
 
 ### 2. Wedding Services Management
 - **Public Discovery**: Browse approved and active services with full-text search across title, description, and location.
@@ -129,6 +130,13 @@ DB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/wedplan?retryWrit
 JWT_SECRET=your_super_secret_jwt_key_here
 JWT_EXPIRES_IN=7d
 
+# Google Identity Services (public Client ID only, no client secret needed)
+GOOGLE_CLIENT_ID=your_google_oauth_client_id.apps.googleusercontent.com
+
+# Better Auth (optional, for the mounted social endpoints)
+BETTER_AUTH_SECRET=your_better_auth_secret_here
+BETTER_AUTH_URL=https://your-backend-domain.vercel.app
+
 # Stripe Payment (Test Mode)
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_PUBLISHABLE_KEY=pk_test_...
@@ -187,7 +195,7 @@ The database seeder automatically initializes the following verified test accoun
 |---|---|---|---|
 | `POST` | `/api/auth/register` | Public | Register customer or vendor (Admin registration blocked) |
 | `POST` | `/api/auth/login` | Public | Sign in with email & password |
-| `POST` | `/api/auth/google` | Public | Google OAuth profile sync / sign in |
+| `POST` | `/api/auth/google` | Public | Google sign-in with a server-verified Google token (access token or ID token) |
 | `GET` | `/api/auth/me` | Authenticated | Retrieve authenticated user profile |
 | `PUT` | `/api/auth/profile` | Authenticated | Update user profile (Name, image, business name) |
 | `PUT` | `/api/auth/change-password` | Authenticated | Change account password |
@@ -260,6 +268,7 @@ The database seeder automatically initializes the following verified test accoun
    - Send `POST /api/auth/register` with role `admin` -> returns `403 Forbidden` (admin cannot be registered publicly).
    - Log in with `admin@wedplan.com` / `Admin@123456` -> returns JWT with role `admin`.
    - Log in with `customer@wedplan.com` / `Customer@123456` -> returns JWT with role `customer`.
+   - Send `POST /api/auth/google` with an arbitrary email and no Google token -> returns `401 Unauthorized` (unverified identities are rejected).
    - Access `GET /api/admin/overview` with customer token -> returns `403 Forbidden`.
    - Access `GET /api/admin/overview` with admin token -> returns `200 OK` with comprehensive metrics.
 
