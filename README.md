@@ -8,7 +8,7 @@ A robust, enterprise-grade REST API backend built with Express.js, MongoDB, Mong
 
 - **Server Repository**: [https://github.com/rakibhasanshuvo712-hub/wedplan-server](https://github.com/rakibhasanshuvo712-hub/wedplan-server)
 - **Live Backend API (Vercel)**: [https://wedplan-backend-inky.vercel.app](https://wedplan-backend-inky.vercel.app)
-- **Live Client Application**: `https://wedplan.vercel.app` (or client deployment link)
+- **Live Client Application**: [https://wedplan-frontend-two.vercel.app](https://wedplan-frontend-two.vercel.app)
 
 ---
 
