@@ -762,7 +762,16 @@ const changePasswordHandler = async (req, res) => {
   }
 };
 
-// Mount Auth routes
+// Mount Auth routes (Better Auth integration)
+const { betterAuthMiddleware } = require('./auth');
+apiRouter.all('/auth/sign-in/*', betterAuthMiddleware);
+apiRouter.all('/auth/sign-up/*', betterAuthMiddleware);
+apiRouter.all('/auth/callback/*', betterAuthMiddleware);
+apiRouter.all('/auth/get-session', betterAuthMiddleware);
+apiRouter.all('/auth/session', betterAuthMiddleware);
+apiRouter.all('/auth/sign-out', betterAuthMiddleware);
+apiRouter.all('/auth/social/*', betterAuthMiddleware);
+
 apiRouter.post('/auth/register', registerHandler);
 apiRouter.post('/auth/login', loginHandler);
 apiRouter.post('/auth/google', googleAuthHandler);
