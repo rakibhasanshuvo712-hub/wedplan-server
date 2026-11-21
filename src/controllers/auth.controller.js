@@ -1,6 +1,41 @@
 const { User } = require('../models');
 const { generateToken } = require('../utils/jwt');
 
+// Verify a Google Identity Services token directly with Google. Only the public
+// Client ID is required, so no secret is ever needed in the browser.
+const verifyGoogleIdentity = async (token) => {
+  if (!token || typeof token !== 'string') return null;
+  try {
+    let data;
+    if (token.startsWith('ya29.')) {
+      const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return null;
+      data = await response.json();
+    } else {
+      const response = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`
+      );
+      if (!response.ok) return null;
+      data = await response.json();
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      if (clientId && data.aud && data.aud !== clientId) return null;
+    }
+    if (!data.sub || !data.email) return null;
+    if (data.email_verified === false || data.email_verified === 'false') return null;
+    return {
+      googleId: data.sub,
+      email: String(data.email).toLowerCase().trim(),
+      name: data.name || data.given_name || '',
+      image: data.picture || '',
+    };
+  } catch (error) {
+    console.warn('Google identity verification failed:', error.message);
+    return null;
+  }
+};
+
 /**
  * Register a new customer or vendor
  * POST /api/auth/register
@@ -157,45 +192,54 @@ const login = async (req, res) => {
  */
 const googleAuth = async (req, res) => {
   try {
-    const { email, name, image, role, googleId } = req.body;
+    const identityToken =
+      req.body?.accessToken || req.body?.idToken || req.body?.credential || req.body?.googleToken;
+    const profile = await verifyGoogleIdentity(identityToken);
 
-    if (!email) {
-      return res.status(400).json({
+    if (!profile) {
+      return res.status(401).json({
         success: false,
-        error: 'Google email is required.',
+        error: 'Google sign-in could not be verified. Please retry with your Google account.',
       });
     }
 
-    let user = await User.findOne({ email: email.toLowerCase().trim() });
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@wedplan.com').toLowerCase();
+    if (profile.email === adminEmail) {
+      return res.status(403).json({
+        success: false,
+        error: 'Administrator accounts must log in with email and password only.',
+      });
+    }
+
+    let user = await User.findOne({ email: profile.email });
 
     if (user) {
-      if (user.isBlocked) {
+      if (user.role === 'admin' || user.isBlocked) {
         return res.status(403).json({
           success: false,
-          error: 'Your account has been blocked. Access is restricted.',
+          error:
+            user.role === 'admin'
+              ? 'Administrator accounts must log in with email and password only.'
+              : 'Your account has been blocked. Access is restricted.',
         });
       }
-
-      if (!user.googleId && googleId) {
-        user.googleId = googleId;
-        if (!user.image && image) user.image = image;
-        await user.save();
-      }
+      if (!user.googleId) user.googleId = profile.googleId;
+      if (!user.image && profile.image) user.image = profile.image;
+      await user.save();
     } else {
-      const allowedRoles = ['customer', 'vendor'];
-      const assignedRole = allowedRoles.includes(role) ? role : 'customer';
+      const requestedRole = String(req.body?.role || '').toLowerCase();
+      const assignedRole = ['customer', 'vendor'].includes(requestedRole) ? requestedRole : 'customer';
 
       user = new User({
-        name: name || email.split('@')[0],
-        email: email.toLowerCase().trim(),
-        image: image || '',
+        name: profile.name || profile.email.split('@')[0],
+        email: profile.email,
+        image: profile.image || '',
         role: assignedRole,
-        businessName: assignedRole === 'vendor' ? name : '',
-        googleId,
+        businessName: assignedRole === 'vendor' ? profile.name : '',
+        googleId: profile.googleId,
         subscriptionPlan: 'free',
         isBlocked: false,
       });
-
       await user.save();
     }
 

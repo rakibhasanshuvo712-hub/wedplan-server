@@ -137,6 +137,50 @@ const validatePassword = (password) => {
   return true;
 };
 
+// Google Identity Services tokens are verified with Google itself. An access token
+// is checked through the userinfo endpoint and an ID token through tokeninfo, so
+// no client-provided email is ever trusted without proof of ownership.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+
+const verifyGoogleIdentity = async (token) => {
+  if (!token || typeof token !== 'string') return null;
+
+  try {
+    let data;
+
+    if (token.startsWith('ya29.')) {
+      const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return null;
+      data = await response.json();
+    } else {
+      const response = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`
+      );
+      if (!response.ok) return null;
+      data = await response.json();
+
+      if (GOOGLE_CLIENT_ID && data.aud && data.aud !== GOOGLE_CLIENT_ID) {
+        return null;
+      }
+    }
+
+    if (!data.sub || !data.email) return null;
+    if (data.email_verified === false || data.email_verified === 'false') return null;
+
+    return {
+      googleId: data.sub,
+      email: String(data.email).toLowerCase().trim(),
+      name: data.name || data.given_name || '',
+      image: data.picture || '',
+    };
+  } catch (error) {
+    console.warn('Google identity verification failed:', error.message);
+    return null;
+  }
+};
+
 // Authentication Middleware
 const authenticate = async (req, res, next) => {
   try {
@@ -586,79 +630,105 @@ const loginHandler = async (req, res) => {
   }
 };
 
-// Google OAuth
+// Google OAuth — the identity is verified with Google before any account is created.
 const googleAuthHandler = async (req, res) => {
   try {
-    const { email, name, image, role, googleId } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, error: 'Email is required for Google authentication.' });
+    const identityToken =
+      req.body?.accessToken || req.body?.idToken || req.body?.credential || req.body?.googleToken;
+
+    const profile = await verifyGoogleIdentity(identityToken);
+    if (!profile) {
+      return res.status(401).json({
+        success: false,
+        error: 'Google sign-in could not be verified. Please retry with your Google account.',
+      });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = profile.email;
+    const adminEmail = (config.admin.email || 'admin@wedplan.com').toLowerCase();
 
-    if (normalizedEmail === (config.admin.email || 'admin@wedplan.com').toLowerCase()) {
+    if (normalizedEmail === adminEmail) {
       return res.status(403).json({
         success: false,
-        error: 'Admin accounts must log in with email and password only. Google Sign-In is restricted for administrators.',
+        error: 'Administrator accounts must log in with email and password only.',
       });
     }
 
     let user = await User.findOne({ email: normalizedEmail });
 
     if (user) {
-      if (user.role === 'admin') {
+      if (user.role === 'admin' || user.isBlocked) {
         return res.status(403).json({
           success: false,
-          error: 'Admin accounts must log in with email and password only. Google Sign-In is restricted for administrators.',
+          error:
+            user.role === 'admin'
+              ? 'Administrator accounts must log in with email and password only.'
+              : 'Your account has been blocked. Access is restricted.',
         });
       }
-      if (user.isBlocked) {
-        return res.status(403).json({ success: false, error: 'Your account has been blocked.' });
-      }
-      if (googleId && !user.googleId) user.googleId = googleId;
-      if (image && !user.image) user.image = image;
-      await user.save();
 
-    await Vendor.findOneAndUpdate(
-      { userId: user._id },
-      {
-        userId: user._id,
-        name: user.name,
-        businessName: user.businessName,
-        email: user.email,
-        phone: user.phone || '',
-        address: user.address || '',
-        bio: user.bio || '',
-        image: user.image || '',
-        subscriptionPlan: user.subscriptionPlan || 'free',
-        subscriptionExpiresAt: user.subscriptionExpiresAt || null,
-      },
-      { upsert: true, new: true }
-    ).catch(() => null);
+      let changed = false;
+      if (!user.googleId) {
+        user.googleId = profile.googleId;
+        changed = true;
+      }
+      if (!user.image && profile.image) {
+        user.image = profile.image;
+        changed = true;
+      }
+      if (changed) await user.save();
     } else {
-      let selectedRole = role ? role.toLowerCase() : 'customer';
-      if (!['customer', 'vendor'].includes(selectedRole)) selectedRole = 'customer';
+      const requestedRole = String(req.body?.role || '').toLowerCase();
+      const selectedRole = ['customer', 'vendor'].includes(requestedRole) ? requestedRole : 'customer';
+
       user = await User.create({
-        name: name || 'Google User',
+        name: profile.name || normalizedEmail.split('@')[0],
         email: normalizedEmail,
-        image: image || '',
+        image: profile.image || '',
         role: selectedRole,
-        googleId,
+        googleId: profile.googleId,
+        businessName: selectedRole === 'vendor' ? (req.body?.businessName || profile.name || '') : '',
         subscriptionPlan: 'free',
         isBlocked: false,
       });
     }
 
-    const token = generateToken(user);
+    const vendorProfile = {
+      userId: user._id,
+      name: user.name,
+      businessName: user.businessName || `${user.name}'s Wedding Studio`,
+      email: user.email,
+      phone: user.phone || '',
+      address: user.address || '',
+      bio: user.bio || '',
+      image: user.image || '',
+      subscriptionPlan: user.subscriptionPlan || 'free',
+      subscriptionExpiresAt: user.subscriptionExpiresAt || null,
+    };
+
+    if (user.role === 'vendor') {
+      await Vendor.findOneAndUpdate({ userId: user._id }, vendorProfile, { upsert: true, new: true }).catch(
+        () => null
+      );
+    } else {
+      await Customer.findOneAndUpdate(
+        { userId: user._id },
+        { userId: user._id, name: user.name, email: user.email, image: user.image || '' },
+        { upsert: true, new: true }
+      ).catch(() => null);
+    }
+
+    const jwtToken = generateToken(user);
     return res.status(200).json({
       success: true,
       message: 'Google authentication successful.',
-      token,
+      token: jwtToken,
       user: user.toSafeObject(),
-      data: { user: user.toSafeObject(), token },
+      data: { user: user.toSafeObject(), token: jwtToken },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Google authentication failed.' });
+    console.error('Google Auth Error:', error);
+    return res.status(500).json({ success: false, error: 'Google authentication failed. Please try again.' });
   }
 };
 
