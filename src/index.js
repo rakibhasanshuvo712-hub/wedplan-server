@@ -1246,7 +1246,12 @@ const createCheckoutSessionHandler = async (req, res) => {
       metadata: { vendorId: vendor._id.toString(), plan: 'premium' },
     });
 
-    return res.status(200).json({ success: true, url: session.url, sessionId: session.id });
+    return res.status(200).json({
+      success: true,
+      url: session.url,
+      sessionId: session.id,
+      data: { url: session.url, sessionId: session.id },
+    });
   } catch (err) {
     console.error('Create Checkout Session Error:', err);
     return res.status(500).json({ success: false, error: err.message || 'Failed to initialize payment session.' });
