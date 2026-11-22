@@ -725,6 +725,17 @@ const googleAuthHandler = async (req, res) => {
         user.image = profile.image;
         changed = true;
       }
+      // A user who explicitly signs up as a vendor with Google must land in the
+      // vendor dashboard, even when this email was previously a customer account.
+      // Google verified ownership of the email, so this is a deliberate upgrade.
+      // Admins are already rejected above and customer->vendor is the only
+      // allowed transition (never downgrade a vendor back to customer).
+      const requestedRole = String(req.body?.role || '').toLowerCase();
+      if (requestedRole === 'vendor' && user.role === 'customer') {
+        user.role = 'vendor';
+        user.businessName = user.businessName || profile.name || '';
+        changed = true;
+      }
       if (changed) await user.save();
     } else {
       const requestedRole = String(req.body?.role || '').toLowerCase();

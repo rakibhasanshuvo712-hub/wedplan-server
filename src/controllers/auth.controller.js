@@ -268,6 +268,12 @@ const googleAuth = async (req, res) => {
       }
       if (!user.googleId) user.googleId = profile.googleId;
       if (!user.image && profile.image) user.image = profile.image;
+      // Explicit vendor Google sign-up upgrades an existing customer account.
+      const requestedRole = String(req.body?.role || '').toLowerCase();
+      if (requestedRole === 'vendor' && user.role === 'customer') {
+        user.role = 'vendor';
+        user.businessName = user.businessName || profile.name || '';
+      }
       await user.save();
     } else {
       const requestedRole = String(req.body?.role || '').toLowerCase();
