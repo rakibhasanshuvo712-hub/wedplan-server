@@ -3,33 +3,77 @@ const { generateToken } = require('../utils/jwt');
 
 // Verify a Google Identity Services token directly with Google. Only the public
 // Client ID is required, so no secret is ever needed in the browser.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+
+// Accept every common credential field name so a valid sign-in is never rejected
+// simply because of the name the client used for the token.
+const extractIdentityToken = (req) => {
+  const body = req.body || {};
+  const candidates = [
+    body.accessToken,
+    body.idToken,
+    body.credential,
+    body.googleToken,
+    body.token,
+    body.access_token,
+    body.id_token,
+    body.credentialResponse?.credential,
+    body.response?.credential,
+  ];
+
+  const authHeader = req.headers?.authorization || req.headers?.Authorization;
+  if (authHeader && /^Bearer\s+/i.test(authHeader)) {
+    candidates.push(authHeader.replace(/^Bearer\s+/i, ''));
+  }
+
+  return candidates.find((value) => typeof value === 'string' && value.trim())?.trim() || null;
+};
+
+const isExplicitlyUnverified = (value) =>
+  value === false || value === 'false' || value === 0 || value === '0';
+
+const toGoogleProfile = (data) => {
+  if (!data) return null;
+
+  const subject = data.sub || data.user_id || data.id;
+  const email = data.email || data.verified_email;
+  if (!subject || !email) return null;
+  if (isExplicitlyUnverified(data.email_verified)) return null;
+
+  return {
+    googleId: String(subject),
+    email: String(email).toLowerCase().trim(),
+    name: data.name || data.given_name || '',
+    image: data.picture || data.picture_url || data.image || '',
+  };
+};
+
 const verifyGoogleIdentity = async (token) => {
   if (!token || typeof token !== 'string') return null;
+  const identityToken = token.trim();
+  if (!identityToken) return null;
+
   try {
-    let data;
-    if (token.startsWith('ya29.')) {
-      const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${token}` },
+    if (identityToken.startsWith('ya29.')) {
+      let response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${identityToken}` },
       });
-      if (!response.ok) return null;
-      data = await response.json();
-    } else {
-      const response = await fetch(
-        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`
-      );
-      if (!response.ok) return null;
-      data = await response.json();
-      const clientId = process.env.GOOGLE_CLIENT_ID;
-      if (clientId && data.aud && data.aud !== clientId) return null;
+      if (!response.ok) {
+        response = await fetch(
+          `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(identityToken)}`
+        );
+        if (!response.ok) return null;
+      }
+      return toGoogleProfile(await response.json());
     }
-    if (!data.sub || !data.email) return null;
-    if (data.email_verified === false || data.email_verified === 'false') return null;
-    return {
-      googleId: data.sub,
-      email: String(data.email).toLowerCase().trim(),
-      name: data.name || data.given_name || '',
-      image: data.picture || '',
-    };
+
+    const response = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(identityToken)}`
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (GOOGLE_CLIENT_ID && data.aud && data.aud !== GOOGLE_CLIENT_ID) return null;
+    return toGoogleProfile(data);
   } catch (error) {
     console.warn('Google identity verification failed:', error.message);
     return null;
@@ -192,8 +236,7 @@ const login = async (req, res) => {
  */
 const googleAuth = async (req, res) => {
   try {
-    const identityToken =
-      req.body?.accessToken || req.body?.idToken || req.body?.credential || req.body?.googleToken;
+    const identityToken = extractIdentityToken(req);
     const profile = await verifyGoogleIdentity(identityToken);
 
     if (!profile) {

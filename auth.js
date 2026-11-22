@@ -20,7 +20,11 @@ const getAuth = async () => {
     basePath: '/api/auth',
     socialProviders: {
       google: {
-        clientId: process.env.GOOGLE_CLIENT_ID || '',
+        // The redirect-based social flow needs BOTH the client ID and its
+        // matching secret. The public ID alone is only enough for the
+        // token-verification flow used by POST /api/auth/google, so allow a
+        // dedicated pair here instead of silently sending an empty secret.
+        clientId: process.env.GOOGLE_SOCIAL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '',
         clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
       },
     },
